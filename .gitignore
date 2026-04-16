@@ -1,0 +1,25 @@
+# === IGNORE ALL node_modules ===
+node_modules/
+**/node_modules/
+
+# === BACKEND ===
+jira-lite-backend/dist/
+jira-lite-backend/.env
+jira-lite-backend/.env.local
+jira-lite-backend/*.log
+jira-lite-backend/coverage/
+
+# === FRONTEND ===
+jira-lite-frontend/dist/
+jira-lite-frontend/build/
+jira-lite-frontend/.env
+jira-lite-frontend/.env.local
+jira-lite-frontend/*.log
+
+# === SYSTEM/IDE ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+npm-debug.log*
