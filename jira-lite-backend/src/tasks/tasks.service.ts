@@ -1,15 +1,20 @@
-import { Comment } from './entity/comment.entity';
+import { Comment } from "./entity/comment.entity";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Task, TaskStatus } from './entity/task.entity';
-import { CreateTaskDto } from './dto/create-task.dto';
-import { CreateCommentDto } from './dto/create-comment.dto';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Task, TaskStatus } from "./entity/task.entity";
+import { CreateTaskDto } from "./dto/create-task.dto";
+import { CreateCommentDto } from "./dto/create-comment.dto";
 
 @Injectable()
 export class TasksService {
-  private logger = new Logger('TasksService');
+  private logger = new Logger("TasksService");
 
   constructor(
     @InjectRepository(Task)
@@ -19,27 +24,37 @@ export class TasksService {
   ) {}
 
   async create(dto: CreateTaskDto) {
-    const lastTask = await this.taskrepo.find({
-      order: { id: 'DESC' },
-      take: 1,
-    });
+    try {
+      const lastTask = await this.taskrepo.find({
+        order: { id: "DESC" },
+        take: 1,
+      });
 
-    let nextNumber = 1;
+      let nextNumber = 1;
 
-    if (lastTask.length > 0) {
-      nextNumber = lastTask[0].id + 1;
+      if (lastTask.length > 0) {
+        nextNumber = lastTask[0].id + 1;
+      }
+
+      const taskId = `TASK-${nextNumber.toString().padStart(3, "0")}`;
+
+      const task = this.taskrepo.create({
+        ...dto,
+        taskId,
+        status: dto.status ?? TaskStatus.TODO,
+      });
+
+      await this.taskrepo.save(task);
+
+      this.logger.log(`Task created: ${task.taskId}`);
+
+      return task;
+    } catch (err) {
+      const error = err as Error;
+      this.logger.error("Error creating task", error.stack);
+
+      throw new InternalServerErrorException("Failed to create task");
     }
-
-    const taskId = `TASK-${nextNumber.toString().padStart(3, '0')}`;
-    const task = this.taskrepo.create({
-      ...dto,
-      taskId,
-      status: dto.status ?? TaskStatus.TODO,
-    });
-
-    await this.taskrepo.save(task);
-    this.logger.log(`Task created: ${task.taskId}`);
-    return task;
   }
 
   async findAll() {
@@ -59,14 +74,24 @@ export class TasksService {
   }
 
   async update(id: number, data: Partial<Task>) {
-    const exists = await this.taskrepo.exists({ where: { id } });
-    if (!exists) throw new NotFoundException('Task not found');
+    try {
+      const exists = await this.taskrepo.exists({ where: { id } });
 
-    await this.taskrepo.update(id, data);
+      if (!exists) {
+        throw new NotFoundException("Task not found");
+      }
 
-    this.logger.log(`Task updated ID: ${id}`);
+      await this.taskrepo.update(id, data);
 
-    return id;
+      this.logger.log(`Task updated ID: ${id}`);
+
+      return id;
+    } catch (err) {
+      const error = err as Error;
+      this.logger.error(`Error updating task ID: ${id}`, error.stack);
+
+      throw new InternalServerErrorException("Failed to update task");
+    }
   }
 
   async delete(id: number) {
@@ -82,21 +107,21 @@ export class TasksService {
   async findData(query: any) {
     const { status, assignee, priority, search } = query;
 
-    const qb = this.taskrepo.createQueryBuilder('task');
+    const qb = this.taskrepo.createQueryBuilder("task");
 
     // Filter by status
     if (status) {
-      qb.andWhere('task.status = :status', { status });
+      qb.andWhere("task.status = :status", { status });
     }
 
     // Filter by assignee
     if (assignee) {
-      qb.andWhere('task.assignee = :assignee', { assignee });
+      qb.andWhere("task.assignee = :assignee", { assignee });
     }
 
     // Filter by priority
     if (priority) {
-      qb.andWhere('task.priority = :priority', { priority });
+      qb.andWhere("task.priority = :priority", { priority });
     }
 
     // Search (summary + description)
@@ -111,7 +136,7 @@ export class TasksService {
 
     // Filter by taskId string column
 
-    qb.orderBy('task.id', 'ASC');
+    qb.orderBy("task.id", "ASC");
     const tasks = await qb.getMany();
 
     return tasks;
@@ -122,48 +147,57 @@ export class TasksService {
       where: {
         id,
       },
-      relations: ['comments'],
+      relations: ["comments"],
       order: {
         comments: {
-          createdAt: 'DESC',
+          createdAt: "DESC",
         },
       },
     });
     if (!task) {
       throw new NotFoundException({
-        message: 'Task not found',
+        message: "Task not found",
       });
     }
+    this.logger.warn(`Task not found ID: ${id}`);
     return task;
   }
 
   async addcomment(taskId: number, body: CreateCommentDto) {
-    const task = await this.taskrepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      throw new NotFoundException({
-        message: `Task with ID ${taskId} not found`,
+    try {
+      const task = await this.taskrepo.findOne({ where: { id: taskId } });
+
+      if (!task) {
+        throw new NotFoundException(`Task with ID ${taskId} not found`);
+      }
+
+      const comment = this.commentRepo.create({
+        content: body.content,
+        author: body.author,
+        task: { id: taskId },
       });
+
+      await this.commentRepo.save(comment);
+
+      this.logger.log(`Comment added to task ID: ${taskId}`);
+
+      return comment;
+    } catch (err) {
+      const error = err as Error;
+      this.logger.error(`Error adding comment to task ${taskId}`, error.stack);
+
+      throw new InternalServerErrorException("Failed to add comment");
     }
-
-    const comment = this.commentRepo.create({
-      content: body.content,
-      author: body.author,
-      task: { id: taskId },
-    });
-    await this.commentRepo.save(comment);
-    this.logger.log(`Comment added to task ID: ${taskId}`);
-
-    return comment;
   }
 
   async removeComment(commentId: number) {
     const comment = await this.commentRepo.findOne({
       where: { id: commentId },
-      relations: ['task'],
+      relations: ["task"],
     });
     if (!comment) {
       throw new NotFoundException({
-        message: 'Comment not found',
+        message: "Comment not found",
       });
     }
     await this.commentRepo.remove(comment);
